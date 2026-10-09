@@ -1,7 +1,7 @@
 /**
  * Centralised, type-safe access to private environment variables.
  *
- * SvelteKit only exposes `$env/static/private` to server-side code, so
+ * SvelteKit only exposes `$env/dynamic/private` to server-side code, so
  * this module is safe to import from any `+page.server.ts`,
  * `+server.ts`, or `hooks.server.ts`.
  */
@@ -51,7 +51,7 @@ function readEnv(): ServerEnv {
 	return {
 		pocketbaseUrl: pocketbaseUrl.replace(/\/+$/, ''),
 		printerName,
-		teacherPrinterName,
+		teacherPrinterName: teacherPrinterName || printerName,
 		tempDir: resolvedTempDir,
 		defaultQuotaPages:
 			defaultQuotaPages && Number.isFinite(Number(defaultQuotaPages))
@@ -69,4 +69,10 @@ function readEnv(): ServerEnv {
 	};
 }
 
-export const serverEnv: ServerEnv = readEnv();
+// Production credentials are only available at runtime, not during CI build.
+let cachedEnv: ServerEnv | undefined;
+export const serverEnv: ServerEnv = new Proxy({} as ServerEnv, {
+	get(_target, property) {
+		return Reflect.get(cachedEnv ??= readEnv(), property);
+	}
+});

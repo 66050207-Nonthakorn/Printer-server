@@ -8,13 +8,14 @@
 // quota state pull it through `$lib/server/quota.ts` helpers.
 
 import type { Handle } from '@sveltejs/kit';
+import { building } from '$app/environment';
 import { createPb } from '$lib/pb/server';
 import type { UserRole } from '$lib/types';
 import { startPrintJobMonitor } from '$lib/server/functions/monitor/startPrintJobMonitor';
 import { getAdminClient } from '$lib/server/functions/pocketbase/getAdminClient';
 
 // Start background print job monitor every 500ms
-startPrintJobMonitor(500);
+if (!building) startPrintJobMonitor(500);
 
 interface UserTypeRef {
     type?: string;
