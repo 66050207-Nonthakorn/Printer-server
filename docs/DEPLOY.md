@@ -22,3 +22,5 @@ Workflow ส่ง build และ runtime files พร้อม .env โดย�
 ไม่ส่ง source ทั้งโปรเจกต์ ไม่ลบ data/, .data/ หรือ uploads บน server แต่ทับ .env จาก ENV_FILE ทุก deploy และไม่มี rollback อัตโนมัติ หากเปลี่ยน VITE_* ที่ใช้ฝังใน client ให้ตั้ง GitHub Variable ที่ workflow ใช้อ่านและ build ใหม่ ค่า server env อื่นแก้ใน ENV_FILE แล้ว deploy
 
 ติดตั้ง cups-client และ poppler-utils ที่ขาดให้อัตโนมัติ แต่ต้องตั้ง CUPS server, printer queue, driver และสิทธิ์อ่าน page_log ให้ถูกต้องเอง การตรวจ HTTP ไม่ยืนยันว่าพิมพ์จริงสำเร็จ
+
+Deploy ผ่าน PM2 กำหนด PORT=3000 และ health check ใช้ port เดียวกัน แม้ ENV_FILE จะมีค่า PORT เดิม ให้ reverse proxy ชี้ไป port 3000; หลายแอปบนเครื่องเดียวกันต้องแยก IP หรือเครื่องเพื่อไม่ให้ port ชนกัน
