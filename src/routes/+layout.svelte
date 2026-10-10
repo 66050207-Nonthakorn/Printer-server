@@ -1,5 +1,6 @@
 <script lang="ts">
 	import "./layout.css";
+	import { page } from "$app/state";
 	import Navbar from "$lib/components/Navbar.svelte";
 	import AnnouncementCenter from "$lib/components/AnnouncementCenter.svelte";
 	import type { LayoutData } from "./$types";
@@ -7,18 +8,25 @@
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 	let announcementOpen = $state(false);
+	let isLegalPage = $derived(['/privacy', '/terms'].includes(page.url.pathname.replace(/\/$/, '')));
 </script>
 
 <svelte:head><title>Print Server</title></svelte:head>
 
 <div class="flex min-h-screen flex-col bg-app text-fg-app">
 	<Navbar onAnnouncement={() => (announcementOpen = true)} />
-	<AnnouncementCenter userId={data.user?.id ?? null} bind:open={announcementOpen} />
+	{#if !isLegalPage || announcementOpen}
+		<AnnouncementCenter userId={data.user?.id ?? null} bind:open={announcementOpen} />
+	{/if}
 
 	<main class="flex-1 transition-colors duration-300">
 		{@render children()}
 	</main>
 	<footer class="border-t border-strong-app px-4 py-6 text-center text-xs text-muted-app">
 		<span>© {new Date().getFullYear()} <a href="https://github.com/techasit5415" target="_blank" rel="noopener noreferrer" class="hover:text-fg-app hover:underline">Techasit Vanitpattarakul</a></span>
+		<nav aria-label="นโยบายและข้อกำหนด" class="mt-3 flex flex-wrap items-center justify-center gap-x-5 gap-y-1">
+		  <a href="/privacy" class="inline-flex min-h-11 items-center underline underline-offset-4 hover:text-fg-app">นโยบายความเป็นส่วนตัว</a>
+		  <a href="/terms" class="inline-flex min-h-11 items-center underline underline-offset-4 hover:text-fg-app">ข้อกำหนดการใช้งาน</a>
+		</nav>
 	</footer>
 </div>
