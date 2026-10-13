@@ -13,6 +13,7 @@ import { createPb } from '$lib/pb/server';
 import type { UserRole } from '$lib/types';
 import { startPrintJobMonitor } from '$lib/server/functions/monitor/startPrintJobMonitor';
 import { getAdminClient } from '$lib/server/functions/pocketbase/getAdminClient';
+import { writeServiceAudit } from '$lib/server/audit-log';
 
 // Start background print job monitor every 500ms
 if (!building) startPrintJobMonitor(500);
@@ -146,5 +147,9 @@ export const handle: Handle = async ({ event, resolve }) => {
         event.locals.user = null;
     }
 
-    return resolve(event);
+    const response = await resolve(event);
+    if (!event.url.pathname.startsWith('/_app') && event.url.pathname !== '/favicon.ico') {
+        void writeServiceAudit(event, { userId: event.locals.user?.id, action: event.request.method === 'GET' ? 'page_view' : 'request', statusCode: response.status });
+    }
+    return response;
 };

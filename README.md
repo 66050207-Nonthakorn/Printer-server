@@ -50,3 +50,9 @@ You can preview the production build with `npm run preview`.
 ## GitHub Actions deploy
 
 วิธีตั้งค่า SSH, ENV_FILE, PM2 และ deploy อัตโนมัติ: [คู่มือ deploy](docs/DEPLOY.md)
+
+## เอกสารกฎหมาย
+
+- [นโยบายความเป็นส่วนตัว](https://printer.cskmitl.com/privacy)
+- [ข้อกำหนดการใช้งาน](https://printer.cskmitl.com/terms)
+
