@@ -49,7 +49,7 @@ You can preview the production build with `npm run preview`.
 
 ## GitHub Actions deploy
 
-วิธีตั้งค่า SSH, ENV_FILE, PM2 และ deploy อัตโนมัติ: [คู่มือ deploy](docs/DEPLOY.md)
+วิธีตั้งค่า SSH, ENV_FILE, PM2 และ deploy อัตโนมัติ: [คู่มือ deploy](https://github.com/CSNIS-CSKmitl/Docs/blob/main/Projects/printer-server/docs/DEPLOY.md)
 
 ## เอกสารกฎหมาย
 
