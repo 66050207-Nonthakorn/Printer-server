@@ -30,5 +30,5 @@
 		  <a href="/terms" class="inline-flex min-h-7 items-center underline underline-offset-4 hover:text-fg-app">ข้อกำหนดการใช้งาน</a>
 		</nav>
 	</footer>
-  <LegalConsent userId={data.user?.id ?? null} />
+  <LegalConsent userId={data.user?.id ?? null} enabled={!isLegalPage} />
 </div>
