@@ -49,7 +49,7 @@
 </script>
 
 <div
-	class="mx-auto flex min-h-[calc(100dvh-3.5rem)] max-w-md flex-col justify-center px-4 py-12"
+	class="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-md flex-col justify-center px-4 py-12"
 >
 	<header class="mb-8">
 		<h1 class="text-2xl font-semibold text-fg-app">Sign in</h1>
