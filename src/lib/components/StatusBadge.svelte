@@ -12,11 +12,11 @@
 		Hourglass
 	} from '@lucide/svelte';
 
-	/** Covers the four print_jobs statuses */
-	type Status = 'pending' | 'processing' | 'completed' | 'failed';
+	/** Covers known print_jobs statuses while keeping the UI safe for old data. */
+	type Status = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'canceled' | (string & {});
 
 	interface Props {
-		status: Status;
+		status?: Status | null;
 		class?: string;
 	}
 
@@ -24,7 +24,7 @@
 
 	// Each status maps to { icon, label (Thai), chip class, icon colour class }.
 	const config: Record<
-		Status,
+		string,
 		{ Icon: typeof CircleDashed; label: string; chip: string; iconCls: string }
 	> = {
 		pending: {
@@ -50,10 +50,29 @@
 			label: 'ล้มเหลว',
 			chip: 'border-danger/30 bg-danger/10 text-danger',
 			iconCls: 'text-danger'
+		},
+		cancelled: {
+			Icon: AlertCircle,
+			label: 'ยกเลิกแล้ว',
+			chip: 'border-danger/30 bg-danger/10 text-danger',
+			iconCls: 'text-danger'
+		},
+		canceled: {
+			Icon: AlertCircle,
+			label: 'ยกเลิกแล้ว',
+			chip: 'border-danger/30 bg-danger/10 text-danger',
+			iconCls: 'text-danger'
 		}
 	};
 
-	let { Icon, label, chip, iconCls } = $derived(config[status]);
+	const fallback = {
+		Icon: AlertCircle,
+		label: 'ไม่ทราบสถานะ',
+		chip: 'border-strong-app bg-elevated text-secondary-app',
+		iconCls: 'text-secondary-app'
+	};
+
+	let { Icon, label, chip, iconCls } = $derived(config[status ?? ''] ?? fallback);
 </script>
 
 <span
