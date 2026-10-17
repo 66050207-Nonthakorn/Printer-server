@@ -38,7 +38,8 @@ export const load: PageServerLoad = async ({ locals }) => {
     const pb = locals.pb;
     const adminPb = await getAdminClient();
 
-    const [users, jobsResult, allJobs, quotasByUser] = await Promise.all([
+    const today = new Date().toISOString().slice(0, 10);
+    const [users, jobsResult, jobCounts, quotasByUser] = await Promise.all([
         adminPb.collection('users').getFullList<UsersRecord>({
             sort: 'email',
             expand: 'user_type'
@@ -47,7 +48,14 @@ export const load: PageServerLoad = async ({ locals }) => {
             sort: '-created',
             expand: 'user'
         }),
-        adminPb.collection('print_jobs').getFullList<PrintJobsRecord>({ sort: '-created' }),
+        Promise.all([
+            adminPb.collection('print_jobs').getList(1, 1),
+            adminPb.collection('print_jobs').getList(1, 1, { filter: 'status="pending"' }),
+            adminPb.collection('print_jobs').getList(1, 1, { filter: 'status="processing"' }),
+            adminPb.collection('print_jobs').getList(1, 1, { filter: 'status="completed"' }),
+            adminPb.collection('print_jobs').getList(1, 1, { filter: 'status="failed"' }),
+            adminPb.collection('print_jobs').getList(1, 1, { filter: `created >= "${today} 00:00:00"` })
+        ]),
         listAllQuotas(pb)
     ]);
 
@@ -59,12 +67,7 @@ export const load: PageServerLoad = async ({ locals }) => {
         };
     });
 
-    const today = new Date().toISOString().slice(0, 10);
-    const jobsToday = allJobs.filter((job) => job.created.startsWith(today));
-    const statusCounts = allJobs.reduce<Record<string, number>>((counts, job) => {
-        counts[job.status] = (counts[job.status] ?? 0) + 1;
-        return counts;
-    }, {});
+    const [allJobs, pendingJobs, processingJobs, completedJobs, failedJobs, jobsToday] = jobCounts;
     const quotaTotals = usersWithQuota.reduce(
         (totals, user) => ({
             total: totals.total + user.quota.total,
@@ -79,11 +82,11 @@ export const load: PageServerLoad = async ({ locals }) => {
         jobs: decorateQueuePositions(jobsResult.items),
         stats: {
             users: users.length,
-            jobs: allJobs.length,
-            jobsToday: jobsToday.length,
-            activeJobs: (statusCounts.pending ?? 0) + (statusCounts.processing ?? 0),
-            completedJobs: statusCounts.completed ?? 0,
-            failedJobs: statusCounts.failed ?? 0,
+            jobs: allJobs.totalItems,
+            jobsToday: jobsToday.totalItems,
+            activeJobs: pendingJobs.totalItems + processingJobs.totalItems,
+            completedJobs: completedJobs.totalItems,
+            failedJobs: failedJobs.totalItems,
             pagesUsed: quotaTotals.used,
             pagesRemaining: quotaTotals.remaining,
             pagesTotal: quotaTotals.total
