@@ -38,8 +38,12 @@ export const load: PageServerLoad = async ({ locals }) => {
     const pb = locals.pb;
     const adminPb = await getAdminClient();
 
-    const today = new Date().toISOString().slice(0, 10);
-    const [users, jobsResult, jobCounts, quotasByUser] = await Promise.all([
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+    const yearStart = `${now.getUTCFullYear()}-01-01`;
+    const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
+    const [users, jobsResult, jobCounts, completedYearJobs, quotasByUser] = await Promise.all([
         adminPb.collection('users').getFullList<UsersRecord>({
             sort: 'email',
             expand: 'user_type'
@@ -56,6 +60,10 @@ export const load: PageServerLoad = async ({ locals }) => {
             adminPb.collection('print_jobs').getList(1, 1, { filter: 'status="failed"' }),
             adminPb.collection('print_jobs').getList(1, 1, { filter: `created >= "${today} 00:00:00"` })
         ]),
+        adminPb.collection('print_jobs').getFullList<Pick<PrintJobsRecord, 'pages' | 'created'>>({
+            filter: `status="completed" && created >= "${yearStart} 00:00:00"`,
+            fields: 'pages,created'
+        }),
         listAllQuotas(pb)
     ]);
 
@@ -68,14 +76,10 @@ export const load: PageServerLoad = async ({ locals }) => {
     });
 
     const [allJobs, pendingJobs, processingJobs, completedJobs, failedJobs, jobsToday] = jobCounts;
-    const quotaTotals = usersWithQuota.reduce(
-        (totals, user) => ({
-            total: totals.total + user.quota.total,
-            remaining: totals.remaining + user.quota.remaining,
-            used: totals.used + user.quota.used
-        }),
-        { total: 0, remaining: 0, used: 0 }
-    );
+    const pagesThisMonth = completedYearJobs
+        .filter((job) => job.created >= `${monthStart} 00:00:00` && job.created < `${nextMonth} 00:00:00`)
+        .reduce((sum, job) => sum + Math.max(0, job.pages), 0);
+    const pagesThisYear = completedYearJobs.reduce((sum, job) => sum + Math.max(0, job.pages), 0);
 
     return {
         users: usersWithQuota,
@@ -87,9 +91,8 @@ export const load: PageServerLoad = async ({ locals }) => {
             activeJobs: pendingJobs.totalItems + processingJobs.totalItems,
             completedJobs: completedJobs.totalItems,
             failedJobs: failedJobs.totalItems,
-            pagesUsed: quotaTotals.used,
-            pagesRemaining: quotaTotals.remaining,
-            pagesTotal: quotaTotals.total
+            pagesThisMonth,
+            pagesThisYear
         }
     };
 };

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CheckCircle2, Clock3, FileText, Printer, Users, WalletCards } from '@lucide/svelte';
+	import { CheckCircle2, Clock3, FileText, Printer, Users } from '@lucide/svelte';
 
 	let { stats }: {
 		stats: {
@@ -9,9 +9,8 @@
 			activeJobs: number;
 			completedJobs: number;
 			failedJobs: number;
-			pagesUsed: number;
-			pagesRemaining: number;
-			pagesTotal: number;
+			pagesThisMonth: number;
+			pagesThisYear: number;
 		};
 	} = $props();
 
@@ -20,8 +19,8 @@
 		{ label: 'งานพิมพ์ทั้งหมด', value: stats.jobs, detail: `วันนี้ ${stats.jobsToday} งาน`, Icon: FileText, color: 'text-accent' },
 		{ label: 'กำลังดำเนินการ', value: stats.activeJobs, detail: 'รอคิว / กำลังพิมพ์', Icon: Printer, color: 'text-warning' },
 		{ label: 'พิมพ์สำเร็จ', value: stats.completedJobs, detail: `ผิดพลาด ${stats.failedJobs} งาน`, Icon: CheckCircle2, color: 'text-success' },
-		{ label: 'โควต้าคงเหลือรวมทุกบัญชี', value: stats.pagesRemaining, detail: `ใช้ไป ${stats.pagesUsed.toLocaleString()} จาก ${stats.pagesTotal.toLocaleString()} หน้า`, Icon: WalletCards, color: 'text-accent' },
-		{ label: 'งานวันนี้', value: stats.jobsToday, detail: 'นับจากเวลา server', Icon: Clock3, color: 'text-secondary-app' }
+		{ label: 'หน้าที่พิมพ์เดือนนี้', value: stats.pagesThisMonth, detail: 'เฉพาะงานพิมพ์สำเร็จ', Icon: FileText, color: 'text-accent' },
+		{ label: 'หน้าที่พิมพ์ปีนี้', value: stats.pagesThisYear, detail: 'เฉพาะงานพิมพ์สำเร็จ', Icon: Clock3, color: 'text-secondary-app' }
 	]);
 </script>
 
