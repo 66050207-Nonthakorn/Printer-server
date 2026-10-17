@@ -1,17 +1,31 @@
 <script lang="ts">
-	import { enhance } from "$app/forms";
-	import { Printer } from "@lucide/svelte";
-	import Button from "$lib/components/Button.svelte";
-	import StatusBadge from "$lib/components/StatusBadge.svelte";
-	import type { PrintJobsRecord } from "$lib/server/pocketbase";
+	import { enhance } from '$app/forms';
+	import { Printer } from '@lucide/svelte';
+	import Button from '$lib/components/Button.svelte';
+	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import type { PrintJobsRecord } from '$lib/server/pocketbase';
+	import type { PrintDrilldownFilter } from '$lib/print-stats';
 
 	let {
 		jobs,
-	}: { jobs: Array<PrintJobsRecord & { queuePosition: number | null }> } =
-		$props();
+		drilldown = $bindable<PrintDrilldownFilter>('all'),
+		onClearFilter
+	}: {
+		jobs: Array<PrintJobsRecord & { queuePosition: number | null }>;
+		drilldown?: PrintDrilldownFilter;
+		onClearFilter?: () => void;
+	} = $props();
+
+	const filterLabels: Record<string, string> = {
+		all: 'ทั้งหมด',
+		pending: 'รอคิว / กำลังพิมพ์',
+		printing: 'รอคิว / กำลังพิมพ์',
+		active: 'รอคิว / กำลังพิมพ์',
+		completed: 'พิมพ์สำเร็จ',
+		failed: 'งานพิมพ์ผิดพลาด'
+	};
 
 	function jobRef(id: string): string {
-		// Suffix of PB id uppercased — stable per row, ~4 chars.
 		return `JOB-${id.slice(-4).toUpperCase()}`;
 	}
 
@@ -21,14 +35,14 @@
 		error_message?: string | null;
 	}): string {
 		switch (job.status) {
-			case "processing":
-				return "เครื่องกำลังทำงานอยู่";
-			case "pending":
-				return `ต่อคิว (ลำดับ ${job.queuePosition ?? "?"})`;
-			case "completed":
-				return "พิมพ์เสร็จเรียบร้อย";
-			case "failed":
-				return job.error_message ?? "เกิดข้อผิดพลาด";
+			case 'processing':
+				return 'เครื่องกำลังทำงานอยู่';
+			case 'pending':
+				return `ต่อคิว (ลำดับ ${job.queuePosition ?? '?'})`;
+			case 'completed':
+				return 'พิมพ์เสร็จเรียบร้อย';
+			case 'failed':
+				return job.error_message ?? 'เกิดข้อผิดพลาด';
 			default:
 				return job.status;
 		}
@@ -48,9 +62,31 @@
 <section
 	class="mb-8 rounded-xl border border-app bg-surface shadow-sm transition-colors"
 >
-	<div class="flex items-center gap-2 border-b border-app px-6 py-4">
-		<Printer class="h-4 w-4 text-accent" />
-		<h2 class="text-base font-semibold text-fg-app">คิวเครื่องพิมพ์</h2>
+	<div class="flex flex-wrap items-center justify-between gap-2 border-b border-app px-6 py-4">
+		<div class="flex items-center gap-2">
+			<Printer class="h-4 w-4 text-accent" />
+			<h2 class="text-base font-semibold text-fg-app">คิวเครื่องพิมพ์</h2>
+			<span class="rounded-full bg-elevated px-2 py-0.5 text-xs text-muted-app">
+				{jobs.length} รายการ
+			</span>
+			{#if drilldown && drilldown !== 'all'}
+				<span class="rounded-full border border-accent/40 bg-accent/10 px-2.5 py-0.5 text-xs font-medium text-accent">
+					กรอง: {filterLabels[drilldown] || drilldown}
+				</span>
+			{/if}
+		</div>
+		{#if drilldown && drilldown !== 'all'}
+			<button
+				type="button"
+				onclick={() => {
+					drilldown = 'all';
+					onClearFilter?.();
+				}}
+				class="text-xs font-medium text-accent hover:underline"
+			>
+				ล้างตัวกรองสถานะ
+			</button>
+		{/if}
 	</div>
 	<div class="max-h-[400px] overflow-auto">
 		<table class="w-full text-sm">
@@ -59,18 +95,13 @@
 			>
 				<tr>
 					<th class="px-6 py-3 text-left font-medium">รหัสงาน</th>
-					<th class="px-6 py-3 text-left font-medium"
-						>ชื่อไฟล์เอกสาร</th
-					>
-					<th class="px-6 py-3 text-left font-medium">ผู้สั่งพิมพ์</th
-					>
-					<th class="px-6 py-3 text-left font-medium">เครื่องพิมพ์</th
-					>
+					<th class="px-6 py-3 text-left font-medium">ชื่อไฟล์เอกสาร</th>
+					<th class="px-6 py-3 text-left font-medium">ผู้สั่งพิมพ์</th>
+					<th class="px-6 py-3 text-left font-medium">เครื่องพิมพ์</th>
 					<th class="px-6 py-3 text-left font-medium">Copy</th>
 					<th class="px-6 py-3 text-left font-medium">หน้า</th>
 					<th class="px-6 py-3 text-left font-medium">สถานะระบบ</th>
-					<th class="px-6 py-3 text-left font-medium">การจัดการคิว</th
-					>
+					<th class="px-6 py-3 text-left font-medium">การจัดการคิว</th>
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-app">
@@ -96,7 +127,7 @@
 						</td>
 						<td class="px-6 py-4">
 							<StatusBadge status={job.status} />
-							{#if job.status === "pending" || job.status === "processing" || job.status === "failed" || job.status === "completed"}
+							{#if job.status === 'pending' || job.status === 'processing' || job.status === 'failed' || job.status === 'completed'}
 								{@const label = jobStatusLabel(job)}
 								{#if label}
 									<p class="mt-1 text-xs text-muted-app">
@@ -106,41 +137,17 @@
 							{/if}
 						</td>
 						<td class="px-6 py-4">
-							{#if job.status === "processing"}
-								<form
-									method="POST"
-									action="?/suspend"
-									use:enhance
-								>
-									<input
-										type="hidden"
-										name="jobId"
-										value={job.id}
-									/>
-									<Button
-										variant="danger"
-										size="sm"
-										type="submit"
-									>
+							{#if job.status === 'processing'}
+								<form method="POST" action="?/suspend" use:enhance>
+									<input type="hidden" name="jobId" value={job.id} />
+									<Button variant="danger" size="sm" type="submit">
 										ระงับงาน
 									</Button>
 								</form>
-							{:else if job.status === "pending"}
-								<form
-									method="POST"
-									action="?/remove"
-									use:enhance
-								>
-									<input
-										type="hidden"
-										name="jobId"
-										value={job.id}
-									/>
-									<Button
-										variant="danger"
-										size="sm"
-										type="submit"
-									>
+							{:else if job.status === 'pending'}
+								<form method="POST" action="?/remove" use:enhance>
+									<input type="hidden" name="jobId" value={job.id} />
+									<Button variant="danger" size="sm" type="submit">
 										ลบคิว
 									</Button>
 								</form>
@@ -152,10 +159,12 @@
 				{:else}
 					<tr>
 						<td
-							colspan="6"
+							colspan="8"
 							class="px-6 py-8 text-center text-sm text-muted-app"
 						>
-							ไม่มีงานพิมพ์ในคิว
+							{drilldown && drilldown !== 'all'
+								? 'ไม่พบงานพิมพ์ในสถานะที่เลือก'
+								: 'ไม่มีงานพิมพ์ในคิว'}
 						</td>
 					</tr>
 				{/each}

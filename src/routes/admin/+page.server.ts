@@ -7,274 +7,247 @@ import { resetToDefault } from '$lib/server/functions/quota/resetToDefault';
 import { refundQuota } from '$lib/server/functions/quota/refundQuota';
 import { clearSession } from '$lib/server/functions/session/clearSession';
 import { cancelPrintJob } from '$lib/server/functions/print/cancelPrintJob';
-
 import { getAdminClient } from '$lib/server/functions/pocketbase/getAdminClient';
+import { calculatePrintStats, type PrintTimeRange } from '$lib/print-stats';
 
 /**
  * ปรับลำดับคิวพิมพ์ในระบบ
  */
 function decorateQueuePositions(
-    jobs: PrintJobsRecord[]
+	jobs: PrintJobsRecord[]
 ): Array<PrintJobsRecord & { queuePosition: number | null }> {
-    const active = jobs
-        .filter((j) => j.status === 'processing' || j.status === 'pending')
-        .sort((a, b) => a.created.localeCompare(b.created));
+	const active = jobs
+		.filter((j) => j.status === 'processing' || j.status === 'pending')
+		.sort((a, b) => a.created.localeCompare(b.created));
 
-    const positionById = new Map<string, number>();
-    active.forEach((job, idx) => positionById.set(job.id, idx + 1));
+	const positionById = new Map<string, number>();
+	active.forEach((job, idx) => positionById.set(job.id, idx + 1));
 
-    return jobs.map((j) => ({
-        ...j,
-        queuePosition: positionById.get(j.id) ?? null
-    }));
+	return jobs.map((j) => ({
+		...j,
+		queuePosition: positionById.get(j.id) ?? null
+	}));
 }
 
-export const load: PageServerLoad = async ({ locals }) => {
-    // 🛡️ ป้องกันความปลอดภัย: เช็คว่าล็อกอินและเป็นแอดมินของระบบจริงไหม
-    if (!locals.user) throw redirect(303, '/login');
-    if (locals.user.role !== 'superadmin') throw redirect(303, '/user');
+export const load: PageServerLoad = async ({ locals, url }) => {
+	// 🛡️ ป้องกันความปลอดภัย: เช็คว่าล็อกอินและเป็นแอดมินของระบบจริงไหม
+	if (!locals.user) throw redirect(303, '/login');
+	if (locals.user.role !== 'superadmin') throw redirect(303, '/user');
 
-    // ⚡ ดึง pb client ประจำ Request ตัวเองมาใช้เลย (สิทธิ์ Admin ตาราง users ทำงานได้ทันทีผ่าน API Rules)
-    const pb = locals.pb;
-    const adminPb = await getAdminClient();
+	const pb = locals.pb;
+	const loadedAt = new Date().toISOString();
+	const rawRange = url.searchParams.get('range') || 'all';
+	const range: PrintTimeRange = ['today', '7d', 'month', 'year', 'all'].includes(rawRange)
+		? (rawRange as PrintTimeRange)
+		: 'all';
 
-    const now = new Date();
-    const today = now.toISOString().slice(0, 10);
-    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
-    const yearStart = `${now.getUTCFullYear()}-01-01`;
-    const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
-    const [users, jobsResult, jobCounts, completedYearJobs, completedJobsForRanking, quotasByUser] = await Promise.all([
-        adminPb.collection('users').getFullList<UsersRecord>({
-            sort: 'email',
-            expand: 'user_type'
-        }),
-        pb.collection('print_jobs').getList<PrintJobsRecord>(1, 100, {
-            sort: '-created',
-            expand: 'user'
-        }),
-        Promise.all([
-            adminPb.collection('print_jobs').getList(1, 1),
-            adminPb.collection('print_jobs').getList(1, 1, { filter: 'status="pending"' }),
-            adminPb.collection('print_jobs').getList(1, 1, { filter: 'status="processing"' }),
-            adminPb.collection('print_jobs').getList(1, 1, { filter: 'status="completed"' }),
-            adminPb.collection('print_jobs').getList(1, 1, { filter: 'status="failed"' }),
-            adminPb.collection('print_jobs').getList(1, 1, { filter: `created >= "${today} 00:00:00"` })
-        ]),
-        adminPb.collection('print_jobs').getFullList<Pick<PrintJobsRecord, 'pages' | 'created'>>({
-            filter: `status="completed" && created >= "${yearStart} 00:00:00"`,
-            fields: 'pages,created'
-        }),
-        adminPb.collection('print_jobs').getFullList<Pick<PrintJobsRecord, 'user' | 'pages'>>({
-            filter: 'status="completed"',
-            fields: 'user,pages'
-        }),
-        listAllQuotas(pb)
-    ]);
+	try {
+		const adminPb = await getAdminClient();
 
-    const usersWithQuota = users.map((u) => {
-        const q = quotasByUser.get(u.id);
-        return {
-            ...u,
-            quota: q ?? { userId: u.id, remaining: 0, total: 0, used: 0, tierTotal: 0 }
-        };
-    });
+		const [users, jobsResult, allStatJobs, quotasByUser] = await Promise.all([
+			adminPb.collection('users').getFullList<UsersRecord>({
+				sort: 'email',
+				expand: 'user_type'
+			}),
+			pb.collection('print_jobs').getList<PrintJobsRecord>(1, 200, {
+				sort: '-created',
+				expand: 'user'
+			}),
+			adminPb.collection('print_jobs').getFullList<PrintJobsRecord>({
+				sort: '-created',
+				fields: 'id,user,filename,status,pages,copies,printer_name,created,updated'
+			}),
+			listAllQuotas(pb)
+		]);
 
-    const [allJobs, pendingJobs, processingJobs, completedJobs, failedJobs, jobsToday] = jobCounts;
-    const pagesThisMonth = completedYearJobs
-        .filter((job) => job.created >= `${monthStart} 00:00:00` && job.created < `${nextMonth} 00:00:00`)
-        .reduce((sum, job) => sum + Math.max(0, job.pages), 0);
-    const pagesThisYear = completedYearJobs.reduce((sum, job) => sum + Math.max(0, job.pages), 0);
-    const userById = new Map(users.map((user) => [user.id, user]));
-    const ranking = new Map<string, { userId: string; name: string; email: string; pages: number; jobs: number }>();
-    for (const job of completedJobsForRanking) {
-        const current = ranking.get(job.user) ?? {
-            userId: job.user,
-            name: userById.get(job.user)?.name || userById.get(job.user)?.username || 'ไม่ระบุชื่อ',
-            email: userById.get(job.user)?.email || '',
-            pages: 0,
-            jobs: 0
-        };
-        current.pages += Math.max(0, Number(job.pages) || 0);
-        current.jobs += 1;
-        ranking.set(job.user, current);
-    }
-    const topPrinters = [...ranking.values()]
-        .sort((a, b) => b.pages - a.pages || b.jobs - a.jobs)
-        .slice(0, 10);
+		const usersWithQuota = users.map((u) => {
+			const q = quotasByUser.get(u.id);
+			return {
+				...u,
+				quota: q ?? { userId: u.id, remaining: 0, total: 0, used: 0, tierTotal: 0 }
+			};
+		});
 
-    return {
-        users: usersWithQuota,
-        jobs: decorateQueuePositions(jobsResult.items),
-        stats: {
-            users: users.length,
-            jobs: allJobs.totalItems,
-            jobsToday: jobsToday.totalItems,
-            activeJobs: pendingJobs.totalItems + processingJobs.totalItems,
-            completedJobs: completedJobs.totalItems,
-            failedJobs: failedJobs.totalItems,
-            pagesThisMonth,
-            pagesThisYear,
-            topPrinters
-        }
-    };
+		const stats = calculatePrintStats(allStatJobs, users, { range });
+
+		return {
+			users: usersWithQuota,
+			jobs: decorateQueuePositions(jobsResult.items),
+			statJobs: allStatJobs,
+			stats,
+			range,
+			loadedAt,
+			statsError: ''
+		};
+	} catch (err) {
+		console.error('[admin/load] failed to load stats:', err);
+		const emptyStats = calculatePrintStats([], [], { range });
+		return {
+			users: [],
+			jobs: [],
+			statJobs: [],
+			stats: emptyStats,
+			range,
+			loadedAt,
+			statsError: 'โหลดข้อมูลไม่ได้ กรุณาตรวจสอบการเชื่อมต่อฐานข้อมูล PocketBase'
+		};
+	}
 };
 
 export const actions: Actions = {
-    adjustQuota: async ({ request, locals }) => {
-        if (!locals.user || locals.user.role !== 'superadmin') throw error(403, 'Forbidden');
+	adjustQuota: async ({ request, locals }) => {
+		if (!locals.user || locals.user.role !== 'superadmin') throw error(403, 'Forbidden');
 
-        const data = await request.formData();
-        const userId = String(data.get('userId') ?? '');
-        const delta = Number(data.get('delta') ?? 0);
+		const data = await request.formData();
+		const userId = String(data.get('userId') ?? '');
+		const delta = Number(data.get('delta') ?? 0);
 
-        if (!userId || !Number.isFinite(delta) || delta === 0) {
-            return { ok: false, message: 'ข้อมูลไม่ถูกต้อง' };
-        }
+		if (!userId || !Number.isFinite(delta) || delta === 0) {
+			return { ok: false, message: 'ข้อมูลไม่ถูกต้อง' };
+		}
 
-        const pb = locals.pb; // ⚡ เปลี่ยนมาใช้สิทธิ์ผ่านบัญชีแอดมินปัจจุบัน
+		const pb = locals.pb;
 
-        try {
-            const snapshot = await adjustRemaining(pb, userId, delta);
+		try {
+			const snapshot = await adjustRemaining(pb, userId, delta);
 
-            // ❌ ลบบรรทัดนี้ออกเพื่อเลี่ยงกฎ View Rule
-            // const user = await pb.collection('users').getOne<UsersRecord>(userId); 
+			return {
+				ok: true,
+				message: `ปรับโควต้าให้พนักงานรหัส ${userId} เรียบร้อยแล้ว (เหลือ ${snapshot.remaining}/${snapshot.total} หน้า)`
+			};
+		} catch (e) {
+			console.error('[admin/adjustQuota] failed:', e);
+			return { ok: false, message: 'ไม่สามารถอัปเดตโควต้าได้' };
+		}
+	},
 
-            return {
-                ok: true,
-                // เปลี่ยนไปแสดงผลด้วยรหัสผู้ใช้ (userId) แทนชื่อ
-                message: `ปรับโควต้าให้พนักงานรหัส ${userId} เรียบร้อยแล้ว (เหลือ ${snapshot.remaining}/${snapshot.total} หน้า)`
-            };
-        } catch (e) {
-            console.error('[admin/adjustQuota] failed:', e);
-            return { ok: false, message: 'ไม่สามารถอัปเดตโควต้าได้' };
-        }
-    },
+	resetQuota: async ({ request, locals }) => {
+		if (!locals.user || locals.user.role !== 'superadmin') throw error(403, 'Forbidden');
 
-    resetQuota: async ({ request, locals }) => {
-        if (!locals.user || locals.user.role !== 'superadmin') throw error(403, 'Forbidden');
+		const data = await request.formData();
+		const userId = String(data.get('userId') ?? '');
+		const userName = String(data.get('userName') ?? userId);
 
-        const data = await request.formData();
-        const userId = String(data.get('userId') ?? '');
+		if (!userId) return { ok: false, message: 'ข้อมูลไม่ถูกต้อง' };
 
-        // ⚡ รับชื่อมาจากหน้าบ้าน (ถ้าไม่มีให้ fallback เป็นรหัส)
-        const userName = String(data.get('userName') ?? userId);
+		const pb = locals.pb;
 
-        if (!userId) return { ok: false, message: 'ข้อมูลไม่ถูกต้อง' };
+		try {
+			const snapshot = await resetToDefault(pb, userId);
 
-        const pb = locals.pb;
+			return {
+				ok: true,
+				message: `รีเซ็ตโควต้าให้ ${userName} เป็น ${snapshot.total} หน้าเรียบร้อยแล้ว`
+			};
+		} catch (e) {
+			console.error('[admin/resetQuota] failed:', e);
+			return { ok: false, message: 'ไม่สามารถรีเซ็ตโควต้าได้' };
+		}
+	},
 
-        try {
-            const snapshot = await resetToDefault(pb, userId);
+	bulkAdjustQuota: async ({ request, locals }) => {
+		if (!locals.user || locals.user.role !== 'superadmin') throw error(403, 'Forbidden');
 
-            return {
-                ok: true,
-                // ⚡ เอา userName มาใส่ตรงนี้ได้เลย!
-                message: `รีเซ็ตโควต้าให้ ${userName} เป็น ${snapshot.total} หน้าเรียบร้อยแล้ว`
-            };
-        } catch (e) {
-            console.error('[admin/resetQuota] failed:', e);
-            return { ok: false, message: 'ไม่สามารถรีเซ็ตโควต้าได้' };
-        }
-    },
+		const data = await request.formData();
+		const userIds = data
+			.getAll('userIds')
+			.map((v) => String(v))
+			.filter(Boolean);
+		const delta = Number(data.get('delta') ?? 0);
 
-    bulkAdjustQuota: async ({ request, locals }) => {
-        if (!locals.user || locals.user.role !== 'superadmin') throw error(403, 'Forbidden');
+		if (userIds.length === 0) return { ok: false, message: 'ยังไม่ได้เลือกผู้ใช้' };
+		if (!Number.isFinite(delta) || delta === 0) return { ok: false, message: 'จำนวนหน้าไม่ถูกต้อง' };
 
-        const data = await request.formData();
-        const userIds = data.getAll('userIds').map((v) => String(v)).filter(Boolean);
-        const delta = Number(data.get('delta') ?? 0);
+		const pb = locals.pb;
 
-        if (userIds.length === 0) return { ok: false, message: 'ยังไม่ได้เลือกผู้ใช้' };
-        if (!Number.isFinite(delta) || delta === 0) return { ok: false, message: 'จำนวนหน้าไม่ถูกต้อง' };
+		const settled = await Promise.allSettled(
+			userIds.map((userId) => adjustRemaining(pb, userId, delta))
+		);
 
-        const pb = locals.pb;
+		const ok = settled.filter((r) => r.status === 'fulfilled').length;
+		const failed = settled.length - ok;
 
-        const settled = await Promise.allSettled(
-            userIds.map((userId) => adjustRemaining(pb, userId, delta))
-        );
+		return failed === 0
+			? {
+					ok: true,
+					message: `เพิ่มโควต้า ${delta >= 0 ? '+' : ''}${delta} หน้า ให้ ${ok} คนเรียบร้อย`
+				}
+			: { ok: false, message: `ปรับสำเร็จ ${ok} คน, ล้มเหลว ${failed} คน` };
+	},
 
-        const ok = settled.filter((r) => r.status === 'fulfilled').length;
-        const failed = settled.length - ok;
+	bulkResetQuota: async ({ request, locals }) => {
+		if (!locals.user || locals.user.role !== 'superadmin') throw error(403, 'Forbidden');
 
-        return failed === 0
-            ? { ok: true, message: `เพิ่มโควต้า ${delta >= 0 ? '+' : ''}${delta} หน้า ให้ ${ok} คนเรียบร้อย` }
-            : { ok: false, message: `ปรับสำเร็จ ${ok} คน, ล้มเหลว ${failed} คน` };
-    },
+		const data = await request.formData();
+		const userIds = data
+			.getAll('userIds')
+			.map((v) => String(v))
+			.filter(Boolean);
 
-    bulkResetQuota: async ({ request, locals }) => {
-        if (!locals.user || locals.user.role !== 'superadmin') throw error(403, 'Forbidden');
+		if (userIds.length === 0) return { ok: false, message: 'ยังไม่ได้เลือกผู้ใช้' };
 
-        const data = await request.formData();
-        const userIds = data.getAll('userIds').map((v) => String(v)).filter(Boolean);
+		const pb = locals.pb;
 
-        if (userIds.length === 0) return { ok: false, message: 'ยังไม่ได้เลือกผู้ใช้' };
+		const settled = await Promise.allSettled(userIds.map((userId) => resetToDefault(pb, userId)));
 
-        const pb = locals.pb;
+		const ok = settled.filter((r) => r.status === 'fulfilled').length;
+		const failed = settled.length - ok;
 
-        const settled = await Promise.allSettled(
-            userIds.map((userId) => resetToDefault(pb, userId))
-        );
+		return failed === 0
+			? { ok: true, message: `รีเซ็ตโควต้าให้ ${ok} คนเรียบร้อย` }
+			: { ok: false, message: `รีเซ็ตสำเร็จ ${ok} คน, ล้มเหลว ${failed} คน` };
+	},
 
-        const ok = settled.filter((r) => r.status === 'fulfilled').length;
-        const failed = settled.length - ok;
+	suspend: async ({ request, locals }) => {
+		if (!locals.user || locals.user.role !== 'superadmin') throw error(403, 'Forbidden');
 
-        return failed === 0
-            ? { ok: true, message: `รีเซ็ตโควต้าให้ ${ok} คนเรียบร้อย` }
-            : { ok: false, message: `รีเซ็ตสำเร็จ ${ok} คน, ล้มเหลว ${failed} คน` };
-    },
+		const data = await request.formData();
+		const jobId = String(data.get('jobId') ?? '');
+		if (!jobId) return { ok: false, message: 'ข้อมูลไม่ถูกต้อง' };
 
-    suspend: async ({ request, locals }) => {
-        if (!locals.user || locals.user.role !== 'superadmin') throw error(403, 'Forbidden');
+		try {
+			const job = await locals.pb.collection('print_jobs').getOne<PrintJobsRecord>(jobId);
 
-        const data = await request.formData();
-        const jobId = String(data.get('jobId') ?? '');
-        if (!jobId) return { ok: false, message: 'ข้อมูลไม่ถูกต้อง' };
+			await locals.pb.collection('print_jobs').update(jobId, {
+				status: 'failed',
+				error_message: 'Suspended by admin'
+			});
 
-        try {
-            const job = await locals.pb.collection('print_jobs').getOne<PrintJobsRecord>(jobId);
+			try {
+				await refundQuota(locals.pb, job.user, job.pages);
+			} catch (refundErr) {
+				console.error('[admin/suspend] refund failed:', refundErr);
+			}
 
-            await locals.pb.collection('print_jobs').update(jobId, {
-                status: 'failed',
-                error_message: 'Suspended by admin'
-            });
+			if (job.cups_job_id) {
+				await cancelPrintJob(job.cups_job_id, job.printer_name);
+			}
 
-            // Refund quota to the user
-            try {
-                await refundQuota(locals.pb, job.user, job.pages);
-            } catch (refundErr) {
-                console.error('[admin/suspend] refund failed:', refundErr);
-            }
+			return { ok: true, message: 'ระงับงานเรียบร้อย' };
+		} catch (e) {
+			console.error('[admin/suspend] failed:', e);
+			return { ok: false, message: 'ไม่สามารถระงับงานได้' };
+		}
+	},
 
-            // Cancel job in CUPS
-            if (job.cups_job_id) {
-                await cancelPrintJob(job.cups_job_id, job.printer_name);
-            }
+	remove: async ({ request, locals }) => {
+		if (!locals.user || locals.user.role !== 'superadmin') throw error(403, 'Forbidden');
 
-            return { ok: true, message: 'ระงับงานเรียบร้อย' };
-        } catch (e) {
-            console.error('[admin/suspend] failed:', e);
-            return { ok: false, message: 'ไม่สามารถระงับงานได้' };
-        }
-    },
+		const data = await request.formData();
+		const jobId = String(data.get('jobId') ?? '');
+		if (!jobId) return { ok: false, message: 'ข้อมูลไม่ถูกต้อง' };
 
-    remove: async ({ request, locals }) => {
-        if (!locals.user || locals.user.role !== 'superadmin') throw error(403, 'Forbidden');
+		try {
+			await locals.pb.collection('print_jobs').delete(jobId);
+			return { ok: true, message: 'ลบงานออกจากคิวเรียบร้อย' };
+		} catch (e) {
+			console.error('[admin/remove] failed:', e);
+			return { ok: false, message: 'ไม่สามารถลบงานได้' };
+		}
+	},
 
-        const data = await request.formData();
-        const jobId = String(data.get('jobId') ?? '');
-        if (!jobId) return { ok: false, message: 'ข้อมูลไม่ถูกต้อง' };
-
-        try {
-            await locals.pb.collection('print_jobs').delete(jobId);
-            return { ok: true, message: 'ลบงานออกจากคิวเรียบร้อย' };
-        } catch (e) {
-            console.error('[admin/remove] failed:', e);
-            return { ok: false, message: 'ไม่สามารถลบงานได้' };
-        }
-    },
-
-    logout: async ({ cookies }) => {
-        clearSession(cookies);
-        throw redirect(303, '/login');
-    }
+	logout: async ({ cookies }) => {
+		clearSession(cookies);
+		throw redirect(303, '/login');
+	}
 };

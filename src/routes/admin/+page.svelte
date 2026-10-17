@@ -1,14 +1,48 @@
 <script lang="ts">
-	import { onMount } from "svelte";
-	import { pbBrowser } from "$lib/pb/client";
-	import { invalidateAll } from "$app/navigation";
-	import AlertBanner from "$lib/components/AlertBanner.svelte";
-	import PrintQueueTable from "$lib/components/Print-Com/admin/PrintQueueTable.svelte";
-	import UserQuotasTable from "$lib/components/Print-Com/admin/UserQuotasTable.svelte";
-	import AdminStats from "$lib/components/Print-Com/admin/AdminStats.svelte";
-	import type { PageData, ActionData } from "./$types";
+	import { onMount } from 'svelte';
+	import { pbBrowser } from '$lib/pb/client';
+	import { invalidateAll } from '$app/navigation';
+	import AlertBanner from '$lib/components/AlertBanner.svelte';
+	import PrintQueueTable from '$lib/components/Print-Com/admin/PrintQueueTable.svelte';
+	import UserQuotasTable from '$lib/components/Print-Com/admin/UserQuotasTable.svelte';
+	import AdminStats from '$lib/components/Print-Com/admin/AdminStats.svelte';
+	import {
+		filterPrintJobs,
+		type PrintDrilldownFilter,
+		type PrintTimeRange
+	} from '$lib/print-stats';
+	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	let range = $state<PrintTimeRange>('all');
+	let drilldown = $state<PrintDrilldownFilter>('all');
+	let realtime = $state(true);
+	let refreshing = $state(false);
+	let lastUpdated = $state('');
+
+	$effect(() => {
+		if (data.loadedAt) {
+			lastUpdated = data.loadedAt;
+		}
+	});
+
+	const filteredJobs = $derived(
+		filterPrintJobs(data.jobs, {
+			range,
+			drilldown
+		}) as typeof data.jobs
+	);
+
+	async function refresh() {
+		refreshing = true;
+		try {
+			await invalidateAll();
+			lastUpdated = new Date().toISOString();
+		} finally {
+			refreshing = false;
+		}
+	}
 
 	onMount(() => {
 		let unsubscribeJobs: (() => void) | null = null;
@@ -18,24 +52,19 @@
 			try {
 				const pb = pbBrowser();
 
-				// Subscribe to all print_jobs updates
-				unsubscribeJobs = await pb
-					.collection("print_jobs")
-					.subscribe("*", () => {
-						invalidateAll();
-					});
+				unsubscribeJobs = await pb.collection('print_jobs').subscribe('*', () => {
+					if (realtime) {
+						void refresh();
+					}
+				});
 
-				// Subscribe to all Quota updates
-				unsubscribeQuota = await pb
-					.collection("Quota")
-					.subscribe("*", () => {
-						invalidateAll();
-					});
+				unsubscribeQuota = await pb.collection('Quota').subscribe('*', () => {
+					if (realtime) {
+						void refresh();
+					}
+				});
 			} catch (err) {
-				console.error(
-					"Failed to subscribe to admin realtime updates:",
-					err,
-				);
+				console.error('Failed to subscribe to admin realtime updates:', err);
 			}
 		}
 
@@ -49,24 +78,33 @@
 </script>
 
 <div class="mx-auto max-w-fit px-6 py-8">
-	<!-- <header class="mb-8">
-		<h1 class="text-2xl font-semibold tracking-tight text-fg-app">
-			Control Panel
-		</h1>
-	</header> -->
-
 	{#if form?.message}
 		<div class="mb-4">
 			<AlertBanner
-				variant={form.ok ? "success" : "error"}
+				variant={form.ok ? 'success' : 'error'}
 				message={form.message}
 			/>
 		</div>
 	{/if}
 
-	<AdminStats stats={data.stats} />
+	<AdminStats
+		stats={data.stats}
+		statJobs={data.statJobs}
+		users={data.users}
+		bind:range
+		bind:drilldown
+		bind:realtime
+		loading={refreshing}
+		error={data.statsError}
+		{lastUpdated}
+		onRefresh={refresh}
+	/>
 
-	<PrintQueueTable jobs={data.jobs} />
+	<PrintQueueTable
+		jobs={filteredJobs}
+		bind:drilldown
+		onClearFilter={() => (drilldown = 'all')}
+	/>
 
 	<UserQuotasTable users={data.users} />
 </div>
