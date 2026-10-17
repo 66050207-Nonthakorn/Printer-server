@@ -6,8 +6,12 @@ import type { QuotaRow, QuotaSnapshot } from './types';
 
 export async function getQuota(pb: AppPocketBase, userId: string): Promise<QuotaSnapshot> {
 	const adminPb = await getAdminClient();
+	// Read the owner's quota with the request client when the optional service
+	// credentials are not configured. Writes still require the server admin
+	// client below, so this fallback does not grant users write access.
+	const readPb = adminPb.authStore.isValid ? adminPb : pb;
 	try {
-		const row = await adminPb.collection('Quota').getFirstListItem<QuotaRow>(`user="${userId}"`, {
+		const row = await readPb.collection('Quota').getFirstListItem<QuotaRow>(`user="${userId}"`, {
 			expand: 'Total_Quota' // ขยาย Relation
 		});
 		return calculateSnapshot(row);
