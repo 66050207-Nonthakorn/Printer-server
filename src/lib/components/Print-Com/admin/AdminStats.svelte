@@ -11,6 +11,7 @@
 			failedJobs: number;
 			pagesThisMonth: number;
 			pagesThisYear: number;
+			topPrinters: Array<{ userId: string; name: string; email: string; pages: number; jobs: number }>;
 		};
 	} = $props();
 
@@ -43,5 +44,35 @@
 				<p class="mt-2 text-xs text-secondary-app">{card.detail}</p>
 			</article>
 		{/each}
+	</div>
+
+	<div class="mt-4 rounded-xl border border-app bg-surface p-4 shadow-sm">
+		<div class="mb-3 flex items-center justify-between gap-3">
+			<div>
+				<h2 class="text-sm font-semibold text-fg-app">ผู้ใช้ที่พิมพ์มากที่สุด</h2>
+				<p class="text-xs text-muted-app">เรียงตามจำนวนหน้าที่พิมพ์สำเร็จสะสม</p>
+			</div>
+		</div>
+		{#if stats.topPrinters.length > 0}
+			<div class="overflow-x-auto">
+				<table class="w-full min-w-[520px] text-left text-sm">
+					<thead class="border-b border-app text-xs text-muted-app">
+						<tr><th class="px-2 py-2">อันดับ</th><th class="px-2 py-2">ผู้ใช้</th><th class="px-2 py-2 text-right">งาน</th><th class="px-2 py-2 text-right">หน้า</th></tr>
+					</thead>
+					<tbody>
+						{#each stats.topPrinters as printer, index (printer.userId)}
+							<tr class="border-b border-app/60 last:border-0">
+								<td class="px-2 py-2 font-semibold text-accent">{index + 1}</td>
+								<td class="px-2 py-2"><div class="font-medium text-fg-app">{printer.name}</div><div class="text-xs text-muted-app">{printer.email}</div></td>
+								<td class="px-2 py-2 text-right tabular-nums text-secondary-app">{printer.jobs.toLocaleString()}</td>
+								<td class="px-2 py-2 text-right font-semibold tabular-nums text-fg-app">{printer.pages.toLocaleString()}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
+			<p class="py-6 text-center text-sm text-muted-app">ยังไม่มีงานพิมพ์ที่สำเร็จ</p>
+		{/if}
 	</div>
 </section>

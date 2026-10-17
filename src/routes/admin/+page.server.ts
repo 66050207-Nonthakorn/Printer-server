@@ -43,7 +43,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
     const yearStart = `${now.getUTCFullYear()}-01-01`;
     const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
-    const [users, jobsResult, jobCounts, completedYearJobs, quotasByUser] = await Promise.all([
+    const [users, jobsResult, jobCounts, completedYearJobs, completedJobsForRanking, quotasByUser] = await Promise.all([
         adminPb.collection('users').getFullList<UsersRecord>({
             sort: 'email',
             expand: 'user_type'
@@ -64,6 +64,10 @@ export const load: PageServerLoad = async ({ locals }) => {
             filter: `status="completed" && created >= "${yearStart} 00:00:00"`,
             fields: 'pages,created'
         }),
+        adminPb.collection('print_jobs').getFullList<Pick<PrintJobsRecord, 'user' | 'pages'>>({
+            filter: 'status="completed"',
+            fields: 'user,pages'
+        }),
         listAllQuotas(pb)
     ]);
 
@@ -80,6 +84,23 @@ export const load: PageServerLoad = async ({ locals }) => {
         .filter((job) => job.created >= `${monthStart} 00:00:00` && job.created < `${nextMonth} 00:00:00`)
         .reduce((sum, job) => sum + Math.max(0, job.pages), 0);
     const pagesThisYear = completedYearJobs.reduce((sum, job) => sum + Math.max(0, job.pages), 0);
+    const userById = new Map(users.map((user) => [user.id, user]));
+    const ranking = new Map<string, { userId: string; name: string; email: string; pages: number; jobs: number }>();
+    for (const job of completedJobsForRanking) {
+        const current = ranking.get(job.user) ?? {
+            userId: job.user,
+            name: userById.get(job.user)?.name || userById.get(job.user)?.username || 'ไม่ระบุชื่อ',
+            email: userById.get(job.user)?.email || '',
+            pages: 0,
+            jobs: 0
+        };
+        current.pages += Math.max(0, Number(job.pages) || 0);
+        current.jobs += 1;
+        ranking.set(job.user, current);
+    }
+    const topPrinters = [...ranking.values()]
+        .sort((a, b) => b.pages - a.pages || b.jobs - a.jobs)
+        .slice(0, 10);
 
     return {
         users: usersWithQuota,
@@ -92,7 +113,8 @@ export const load: PageServerLoad = async ({ locals }) => {
             completedJobs: completedJobs.totalItems,
             failedJobs: failedJobs.totalItems,
             pagesThisMonth,
-            pagesThisYear
+            pagesThisYear,
+            topPrinters
         }
     };
 };
