@@ -20,7 +20,7 @@
 		{ label: 'งานพิมพ์ทั้งหมด', value: stats.jobs, detail: `วันนี้ ${stats.jobsToday} งาน`, Icon: FileText, color: 'text-accent' },
 		{ label: 'กำลังดำเนินการ', value: stats.activeJobs, detail: 'รอคิว / กำลังพิมพ์', Icon: Printer, color: 'text-warning' },
 		{ label: 'พิมพ์สำเร็จ', value: stats.completedJobs, detail: `ผิดพลาด ${stats.failedJobs} งาน`, Icon: CheckCircle2, color: 'text-success' },
-		{ label: 'โควต้าคงเหลือรวม', value: stats.pagesRemaining, detail: `${stats.pagesUsed} / ${stats.pagesTotal} หน้าใช้ไป`, Icon: WalletCards, color: 'text-accent' },
+		{ label: 'โควต้าคงเหลือรวมทุกบัญชี', value: stats.pagesRemaining, detail: `ใช้ไป ${stats.pagesUsed.toLocaleString()} จาก ${stats.pagesTotal.toLocaleString()} หน้า`, Icon: WalletCards, color: 'text-accent' },
 		{ label: 'งานวันนี้', value: stats.jobsToday, detail: 'นับจากเวลา server', Icon: Clock3, color: 'text-secondary-app' }
 	]);
 </script>
