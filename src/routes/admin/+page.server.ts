@@ -38,7 +38,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     const pb = locals.pb;
     const adminPb = await getAdminClient();
 
-    const [users, jobsResult, quotasByUser] = await Promise.all([
+    const [users, jobsResult, allJobs, quotasByUser] = await Promise.all([
         adminPb.collection('users').getFullList<UsersRecord>({
             sort: 'email',
             expand: 'user_type'
@@ -47,6 +47,7 @@ export const load: PageServerLoad = async ({ locals }) => {
             sort: '-created',
             expand: 'user'
         }),
+        adminPb.collection('print_jobs').getFullList<PrintJobsRecord>({ sort: '-created' }),
         listAllQuotas(pb)
     ]);
 
@@ -58,9 +59,35 @@ export const load: PageServerLoad = async ({ locals }) => {
         };
     });
 
+    const today = new Date().toISOString().slice(0, 10);
+    const jobsToday = allJobs.filter((job) => job.created.startsWith(today));
+    const statusCounts = allJobs.reduce<Record<string, number>>((counts, job) => {
+        counts[job.status] = (counts[job.status] ?? 0) + 1;
+        return counts;
+    }, {});
+    const quotaTotals = usersWithQuota.reduce(
+        (totals, user) => ({
+            total: totals.total + user.quota.total,
+            remaining: totals.remaining + user.quota.remaining,
+            used: totals.used + user.quota.used
+        }),
+        { total: 0, remaining: 0, used: 0 }
+    );
+
     return {
         users: usersWithQuota,
-        jobs: decorateQueuePositions(jobsResult.items)
+        jobs: decorateQueuePositions(jobsResult.items),
+        stats: {
+            users: users.length,
+            jobs: allJobs.length,
+            jobsToday: jobsToday.length,
+            activeJobs: (statusCounts.pending ?? 0) + (statusCounts.processing ?? 0),
+            completedJobs: statusCounts.completed ?? 0,
+            failedJobs: statusCounts.failed ?? 0,
+            pagesUsed: quotaTotals.used,
+            pagesRemaining: quotaTotals.remaining,
+            pagesTotal: quotaTotals.total
+        }
     };
 };
 

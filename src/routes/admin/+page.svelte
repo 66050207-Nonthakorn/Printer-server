@@ -5,6 +5,7 @@
 	import AlertBanner from "$lib/components/AlertBanner.svelte";
 	import PrintQueueTable from "$lib/components/Print-Com/admin/PrintQueueTable.svelte";
 	import UserQuotasTable from "$lib/components/Print-Com/admin/UserQuotasTable.svelte";
+	import AdminStats from "$lib/components/Print-Com/admin/AdminStats.svelte";
 	import type { PageData, ActionData } from "./$types";
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -62,6 +63,8 @@
 			/>
 		</div>
 	{/if}
+
+	<AdminStats stats={data.stats} />
 
 	<PrintQueueTable jobs={data.jobs} />
 
