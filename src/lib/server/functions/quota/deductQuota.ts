@@ -14,14 +14,14 @@ export async function deductQuota(
 	if (pages <= 0) return getQuota(pb, userId);
 
 	try {
+		const adminPb = await getAdminClient();
 		let row: QuotaRow;
 		try {
-			row = await pb.collection('Quota').getFirstListItem<QuotaRow>(`user="${userId}"`, {
+			row = await adminPb.collection('Quota').getFirstListItem<QuotaRow>(`user="${userId}"`, {
 				expand: 'Total_Quota'
 			});
 		} catch {
 			// หากไม่มีข้อมูลโควต้าในฐานข้อมูล ให้สร้างขึ้นมาใหม่
-			const adminPb = await getAdminClient();
 			const defaultPkg = await getDefaultPackage(pb);
 			row = await adminPb.collection('Quota').create<QuotaRow>({
 				user: [userId],
@@ -35,7 +35,6 @@ export async function deductQuota(
 		if (snap.remaining < pages && userTypeId !== '000000000000002' && userTypeId !== '000000000000009') return null; // โควต้าไม่พอ (ยกเว้นอาจารย์)
 
 		// อัปเดตยอดใช้ไป
-		const adminPb = await getAdminClient();
 		const updatedRow = await adminPb.collection('Quota').update<QuotaRow>(row.id, {
 			Use: row.Use + pages
 		}, { expand: 'Total_Quota' });

@@ -5,15 +5,15 @@ import { getDefaultPackage } from './getDefaultPackage';
 import type { QuotaRow, QuotaSnapshot } from './types';
 
 export async function getQuota(pb: AppPocketBase, userId: string): Promise<QuotaSnapshot> {
+	const adminPb = await getAdminClient();
 	try {
-		const row = await pb.collection('Quota').getFirstListItem<QuotaRow>(`user="${userId}"`, {
+		const row = await adminPb.collection('Quota').getFirstListItem<QuotaRow>(`user="${userId}"`, {
 			expand: 'Total_Quota' // ขยาย Relation
 		});
 		return calculateSnapshot(row);
 	} catch {
 		// ถ้าไม่เคยมีข้อมูล สร้างข้อมูลใหม่ลงในตาราง Quota
 		try {
-			const adminPb = await getAdminClient();
 			const defaultPkg = await getDefaultPackage(pb);
 			const newRow = await adminPb.collection('Quota').create<QuotaRow>({
 				user: [userId],
