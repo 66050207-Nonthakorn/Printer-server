@@ -3,21 +3,20 @@ import { calculateSnapshot } from './calculateSnapshot';
 import { getDefaultPackage } from './getDefaultPackage';
 import type { QuotaRow, QuotaSnapshot } from './types';
 
+function isNotFoundError(error: unknown): boolean {
+	return typeof error === 'object' && error !== null && 'status' in error && (error as { status?: unknown }).status === 404;
+}
+
 export async function resetToDefault(pb: AppPocketBase, userId: string): Promise<QuotaSnapshot> {
+	let row: QuotaRow;
+
 	try {
-		const row = await pb.collection('Quota').getFirstListItem<QuotaRow>(`user="${userId}"`, { expand: 'Total_Quota' });
+		row = await pb.collection('Quota').getFirstListItem<QuotaRow>(`user="${userId}"`, { expand: 'Total_Quota' });
+	} catch (error) {
+		if (!isNotFoundError(error)) throw error;
 
-		// ล้างยอด Use เป็น 0 และล้างโบนัส Add_Quota ส่วนตัวเป็น 0
-		const updatedRow = await pb.collection('Quota').update<QuotaRow>(row.id, {
-			Add_Quota: 0,
-			Use: 0
-		}, { expand: 'Total_Quota' });
-
-		return calculateSnapshot(updatedRow);
-	} catch {
 		const defaultPkg = await getDefaultPackage(pb);
 		const newRow = await pb.collection('Quota').create<QuotaRow>({
-			// ⚡ ใส่ก้ามปูครอบเหมือนกัน
 			user: [userId],
 			Total_Quota: [defaultPkg.id],
 			Add_Quota: 0,
@@ -26,4 +25,12 @@ export async function resetToDefault(pb: AppPocketBase, userId: string): Promise
 
 		return calculateSnapshot(newRow);
 	}
+
+	// Reset เฉพาะยอดใช้และโบนัสส่วนตัว โดยคงแพ็กเกจโควต้าหลักเดิมไว้
+	const updatedRow = await pb.collection('Quota').update<QuotaRow>(row.id, {
+		Add_Quota: 0,
+		Use: 0
+	}, { expand: 'Total_Quota' });
+
+	return calculateSnapshot(updatedRow);
 }
