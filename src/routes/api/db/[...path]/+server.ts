@@ -1,12 +1,19 @@
 import { serverEnv } from '$lib/server/env';
 import { error, type RequestHandler } from '@sveltejs/kit';
 
+export const trailingSlash = 'ignore';
+
 export const fallback: RequestHandler = async ({ request, fetch }) => {
 	const pbUrl = serverEnv.pocketbaseUrl || 'http://192.168.15.14:8080';
 	const url = new URL(request.url);
 
-	// Preserve full subpath after /api/db including trailing slashes (e.g. /_/ or /api/...)
-	const subPath = url.pathname.replace(/^\/api\/db/, '') || '/';
+	// Match the subpath after /api/db
+	let subPath = url.pathname.replace(/^\/api\/db/, '') || '/';
+	// PocketBase admin/oauth redirect strictly requires trailing slash for /_/
+	if (subPath === '/_') {
+		subPath = '/_/';
+	}
+
 	const targetUrl = `${pbUrl.replace(/\/+$/, '')}${subPath}${url.search}`;
 
 	// Clone the headers from the incoming request, omitting connection/encoding/host
@@ -20,8 +27,7 @@ export const fallback: RequestHandler = async ({ request, fetch }) => {
 	try {
 		const body = request.body ? request.body : undefined;
 
-		// Fetch from the local PocketBase server using SvelteKit's fetch
-		const res = await fetch(targetUrl, {
+		let upstream = await fetch(targetUrl, {
 			method: request.method,
 			headers,
 			body,
@@ -30,12 +36,23 @@ export const fallback: RequestHandler = async ({ request, fetch }) => {
 			duplex: body ? 'half' : undefined
 		});
 
-		const responseHeaders = new Headers(res.headers);
+		// If PocketBase tries to redirect /_ to /_/, follow it internally to prevent redirect loops
+		if ([301, 302, 307, 308].includes(upstream.status)) {
+			const loc = upstream.headers.get('location');
+			if (loc === '/_/' || loc === '/_' || loc?.endsWith('/_/')) {
+				upstream = await fetch(`${pbUrl.replace(/\/+$/, '')}/_${url.search}`, {
+					method: 'GET',
+					headers
+				});
+			}
+		}
+
+		const responseHeaders = new Headers(upstream.headers);
 		for (const key of ['content-encoding', 'content-length', 'connection', 'transfer-encoding']) {
 			responseHeaders.delete(key);
 		}
 
-		// Rewrite Location header if PocketBase issues a redirect
+		// Rewrite Location header if PocketBase issues a redirect anywhere else
 		const location = responseHeaders.get('location');
 		if (location) {
 			const cleanPb = pbUrl.replace(/\/+$/, '');
@@ -47,11 +64,11 @@ export const fallback: RequestHandler = async ({ request, fetch }) => {
 		}
 
 		const isHtml = responseHeaders.get('content-type')?.includes('text/html') ?? false;
-		const responseBody = isHtml ? await res.arrayBuffer() : res.body;
+		const responseBody = isHtml ? await upstream.arrayBuffer() : upstream.body;
 
 		// Return the response back to the client
 		return new Response(responseBody, {
-			status: res.status,
+			status: upstream.status,
 			headers: responseHeaders
 		});
 	} catch (err) {
