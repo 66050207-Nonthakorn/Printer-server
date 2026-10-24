@@ -51,7 +51,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			}),
 			pb.collection('print_jobs').getList<PrintJobsRecord>(1, 200, {
 				sort: '-created',
-				expand: 'user'
+				expand: 'user,created_by,updated_by'
 			}),
 			adminPb.collection('print_jobs').getFullList<PrintJobsRecord>({
 				sort: '-created',

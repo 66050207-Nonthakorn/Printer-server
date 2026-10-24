@@ -40,9 +40,11 @@ export interface PrintJobsRecord {
 	printer_name: string;
 	cups_job_id: number | null;
 	error_message: string | null;
+	created_by?: string;
+	updated_by?: string;
 	created: string;
 	updated: string;
-	expand?: { user?: UsersRecord };
+	expand?: { user?: UsersRecord; created_by?: UsersRecord; updated_by?: UsersRecord };
 }
 
 export type AppPocketBase = PocketBase;

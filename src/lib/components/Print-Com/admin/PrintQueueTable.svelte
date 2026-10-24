@@ -115,6 +115,7 @@
 						</td>
 						<td class="px-6 py-4 text-secondary-app">
 							{requesterLabel(job)}
+							<p class="mt-1 text-xs text-muted-app">เพิ่มโดย: {job.expand?.created_by?.name || job.expand?.created_by?.email || job.created_by || '-'}<br />แก้ไขโดย: {job.expand?.updated_by?.name || job.expand?.updated_by?.email || job.updated_by || '-'}</p>
 						</td>
 						<td class="px-6 py-4 text-secondary-app">
 							{job.printer_name}
