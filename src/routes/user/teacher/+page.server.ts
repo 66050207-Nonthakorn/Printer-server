@@ -190,6 +190,8 @@ export const actions: Actions = {
 
 			const jobPayload = {
 				user: locals.user.id,
+				created_by: locals.user.id,
+				updated_by: locals.user.id,
 				filename: safeName,
 				status: 'pending',
 				pages: totalPages,
@@ -211,6 +213,7 @@ export const actions: Actions = {
 			});
 
 			await pb.collection('print_jobs').update<PrintJobsRecord>(created.id, {
+				updated_by: locals.user.id,
 				status: 'processing',
 				cups_job_id: result.jobId
 			});

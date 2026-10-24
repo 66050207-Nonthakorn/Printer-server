@@ -209,6 +209,7 @@ export const actions: Actions = {
 			const job = await locals.pb.collection('print_jobs').getOne<PrintJobsRecord>(jobId);
 
 			await locals.pb.collection('print_jobs').update(jobId, {
+				updated_by: locals.user.id,
 				status: 'failed',
 				error_message: 'Suspended by admin'
 			});
