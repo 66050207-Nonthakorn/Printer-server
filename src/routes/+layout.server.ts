@@ -1,6 +1,8 @@
 import type { LayoutServerLoad } from './$types';
 import { serverEnv } from '$lib/server/env';
 
+export const trailingSlash = 'ignore';
+
 /**
  * Forward the resolved session user and discordLink to every page via `page.data`
  * so shared chrome (navbar, etc.) can render without each page doing
