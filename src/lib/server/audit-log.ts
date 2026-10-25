@@ -13,6 +13,20 @@ function sourceIp(event: RequestEvent): string {
   });
 }
 
+/** Records an admin decision (cancel / delete) on a print job in the central admin_actions collection. Never throws. */
+export async function writeAdminAction(input: { actorId: string; action: 'approve' | 'reject' | 'delete' | 'cancel'; targetId: string; targetLabel?: string; metadata?: Record<string, unknown> }) {
+  try {
+    const pb = await getAdminClient();
+    await pb.collection('admin_actions').create({
+      service: 'printer', action: input.action, actor: input.actorId,
+      target_collection: 'print_jobs', target_id: input.targetId,
+      target_label: input.targetLabel?.slice(0, 256), metadata: input.metadata ?? {}
+    });
+  } catch (error) {
+    console.warn('[audit] Unable to store admin action:', error instanceof Error ? error.message : error);
+  }
+}
+
 export async function writeServiceAudit(event: RequestEvent, input: { userId?: string | null; action: string; statusCode?: number; metadata?: Record<string, unknown> }) {
   try {
     const pb = await getAdminClient();

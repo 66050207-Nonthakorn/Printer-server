@@ -9,6 +9,7 @@ import { clearSession } from '$lib/server/functions/session/clearSession';
 import { cancelPrintJob } from '$lib/server/functions/print/cancelPrintJob';
 import { getAdminClient } from '$lib/server/functions/pocketbase/getAdminClient';
 import { calculatePrintStats, type PrintTimeRange } from '$lib/print-stats';
+import { writeAdminAction } from '$lib/server/audit-log';
 
 /**
  * ปรับลำดับคิวพิมพ์ในระบบ
@@ -213,6 +214,7 @@ export const actions: Actions = {
 				status: 'failed',
 				error_message: 'Suspended by admin'
 			});
+			await writeAdminAction({ actorId: locals.user.id, action: 'cancel', targetId: jobId, targetLabel: job.printer_name, metadata: { pages: job.pages, owner: job.user } });
 
 			try {
 				await refundQuota(locals.pb, job.user, job.pages);
@@ -239,7 +241,9 @@ export const actions: Actions = {
 		if (!jobId) return { ok: false, message: 'ข้อมูลไม่ถูกต้อง' };
 
 		try {
+			const job = await locals.pb.collection('print_jobs').getOne<PrintJobsRecord>(jobId).catch(() => null);
 			await locals.pb.collection('print_jobs').delete(jobId);
+			await writeAdminAction({ actorId: locals.user.id, action: 'delete', targetId: jobId, targetLabel: job?.printer_name, metadata: { pages: job?.pages, owner: job?.user, status_before: job?.status } });
 			return { ok: true, message: 'ลบงานออกจากคิวเรียบร้อย' };
 		} catch (e) {
 			console.error('[admin/remove] failed:', e);
