@@ -58,6 +58,21 @@ You can preview the production build with `npm run preview`.
 
 วิธีตั้งค่า SSH, ENV_FILE, PM2 และ deploy อัตโนมัติ: [คู่มือ deploy](https://github.com/CSNIS-CSKmitl/Docs/blob/main/Projects/printer-server/docs/DEPLOY.md)
 
+### Upload request limit
+
+Both print routes accept files up to 50 MiB. The production entry point, `server.js`,
+defaults the Node adapter's `BODY_SIZE_LIMIT` to `50M`, including multipart overhead,
+so the largest accepted file will be slightly smaller than 50 MiB.
+Override it in `.env` if needed; this is a runtime environment variable, not an
+`adapter()` option. Starting with `node build` bypasses this default, so set
+`BODY_SIZE_LIMIT=50M` explicitly when using that command.
+
+After changing a deployed `.env`, restart PM2 with
+`pm2 startOrRestart ecosystem.config.cjs --update-env`. If uploads still return
+413, compare a request through the public URL with one sent directly to Node on
+port 3000. If only the public URL fails, check the reverse proxy's body limit
+(for Nginx, `client_max_body_size 50m;`). Proxy configuration is not stored here.
+
 ## เอกสารกฎหมาย
 
 - [นโยบายความเป็นส่วนตัว](https://printer.cskmitl.com/privacy)
