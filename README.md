@@ -60,7 +60,9 @@ You can preview the production build with `npm run preview`.
 
 ### Upload request limit
 
-Both print routes accept files up to 50 MiB. The production entry point, `server.js`,
+Both print routes and the upload form read the runtime `BODY_SIZE_LIMIT`. The form
+displays this limit and rejects files that already meet or exceed it before upload.
+The production entry point, `server.js`,
 defaults the Node adapter's `BODY_SIZE_LIMIT` to `50M`, including multipart overhead,
 so the largest accepted file will be slightly smaller than 50 MiB.
 Override it in `.env` if needed; this is a runtime environment variable, not an
